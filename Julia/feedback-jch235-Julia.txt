@@ -1,0 +1,8 @@
+===
+
+jch235 
+Grades: report (inc bonus): 4,1 ; code (inc bonus): 3,4 ; final: 8,8 
+
+feedback:
+
+ Good parallel solution. The code could be changed, but you removed the channel world board aggregation functionality completely. By doing so your code can not perform animations and benchmark. This left your solution incomplete as you removed a already existing functionality. The right solution would have been left chnl_world as it is and add one more extra channel to the cycle control. About your report.  Reports need Introduction where you describe the content of it and its structure. Your report has no Introduction. About your evaluation. The superlinear behaviour of the code with the large size 64000 does not come from a good parellization, it comes from an excessive size choice. The serial code can not run this size in memory which makes the serial code run slower, which by consequence makes the parallel code seems faster. About the C/MPI x Julia. You should have compared them using the row partition (simply using N=1). However, the analysis and conclusions are fairly good, and this limitation is explained, so only some points were deducted for this unmatch of paramaters for comparison. 
