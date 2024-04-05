@@ -1,0 +1,124 @@
+===
+Parallel program evaluation
+
+Correctness:
+
+- sanity check 1 (rows 2000 columns 2000 iter 15000 world   0 count  0)
+  - Result: OK
+- sanity check 2 (rows 1024 columns 1024 iter  1000 world 100 count 10)
+  - Result: OK
+- on some other testing, e.g. using a 20k x 20k world, the application when
+  run on 8*16 cores terminated with a low level MPI error like:
+	*** An error occurred in MPI_Recv
+	*** MPI_ERRORS_ARE_FATAL (processes in this communicator will now abort,
+  so there appears to be a bug hidden somewhere
+
+Speedup summary using 16000x16000 world, 60 iterations (no world or count sync):
+
+reference gol-seq nodes 1 cores 1  took  56.131 seconds
+jch235 gol-par nodes 1 cores  1 took     58.943 seconds
+jch235 gol-par nodes 1 cores  2 took     31.064 seconds
+jch235 gol-par nodes 1 cores  4 took     15.326 seconds
+jch235 gol-par nodes 1 cores  8 took      8.634 seconds
+jch235 gol-par nodes 1 cores 16 took      5.094 seconds
+jch235 gol-par nodes 2 cores  1 took     29.977 seconds
+jch235 gol-par nodes 2 cores  2 took     15.109 seconds
+jch235 gol-par nodes 2 cores  4 took      7.978 seconds
+jch235 gol-par nodes 2 cores  8 took      4.697 seconds
+jch235 gol-par nodes 2 cores 16 took      2.977 seconds
+jch235 gol-par nodes 4 cores  1 took     15.155 seconds
+jch235 gol-par nodes 4 cores  2 took      7.821 seconds
+jch235 gol-par nodes 4 cores  4 took      4.611 seconds
+jch235 gol-par nodes 4 cores  8 took      2.811 seconds
+jch235 gol-par nodes 4 cores 16 took      2.221 seconds
+jch235 gol-par nodes 8 cores  1 took      7.962 seconds
+jch235 gol-par nodes 8 cores  2 took      4.258 seconds
+jch235 gol-par nodes 8 cores  4 took      2.720 seconds
+jch235 gol-par nodes 8 cores  8 took      1.906 seconds
+jch235 gol-par nodes 8 cores 16 took      1.767 seconds
+
+Program structure:
+- MPI primitives used for:
+  - initialization:	none
+  - border exchange:	MPI_Send/Recv
+  - cycle checks:	MPI_Allreduce
+  - cell counting:	MPI_Send/Recv
+  - world printing:	MPI_Send/Recv
+  - furthermore:	MPI_Barrier
+- the assignment mentioned that the world should be initialized
+  at rank 0, all ranks should only get a world chunk.
+  Having them all allocate the full world means that the application
+  would fail for larger worlds when all 16 cores per node would have
+  to allocate that memory.
+- there is extra data copying happening in several cases,
+  this should not be needed as MPI can send/receive directly from/to
+  the datastuctures which are quite regular arrays in this case.
+  This causes unnecessary overhead
+- the distributed cycle check is not correct, since there are two independent
+  conditions that need to be checked by every rank, and then checked
+  for consistency among all ranks.
+- when printing the world, every rank sends its local data to
+  the rank 0 which processes this one by one; it's more efficient
+  to use a collective like MPI_Gatherv (the assignment said to
+  use collectives when it is natural to do so, this is such a case)
+- same for counting cells, this should be implemented more efficiently
+  without transferring the entire world, e.g. MPI_Reduce could be used
+- most MPI code is currently inline in main(), it is a cleaner to
+  put the code in some functions so it is easier to still recognize
+  the original main()
+- the MPI_Barrier inside the main loop should not be needed,
+  as the preceeding message transfers already provide synchronisation
+- gol-par should also work when running on a single node and single core
+- extension1 implements latency hiding using Isend/Irecv/Wait
+  - the second Isend overwrites the sendrequest of the first
+  - neither Isend is blocked on using Wait, unlike the Ireceives
+  - both are bugs and will cause leaking resources inside MPI since
+    it cannot clean them up
+- extension2 implementation adds timing for communication/computation/sync
+  - however apart from this the Send/Recv code in strips_boundary_exchange()
+    is different from gol-par.c compared to gol-par-bonus2.c
+    with all sorts of extra rank case distinctions.
+    This should not be the case.
+
+===
+Report evaluation
+
+- "Odd-numbered workers initiated by sending borders to subsequent workers
+   and receiving from preceding ones, while even-numbered workers started
+    by re- ceiving from the preceding worker and then sending borders to the next one.
+    This alternating pattern ensured that each worker performed an MPI Send operation in one direction followed
+    by a corresponding MPI Recv operation from the counterpart. This adjustment
+    significantly enhanced the efficiency of the parallelized execution."
+  -> actually when using Send/Recv this is required for correct operations,
+  otherwise it may only work by some luck as the MPI implementation will
+  do some buffering.  But for large transfers it can actually deadlock,
+  since the amount of unspecified buffering is not unlimited.
+  Easier is to just use Isend/Recv/Wait everywhere, then all these special cases are
+  not needed, and the communication is still synchronous due to the blocking Recv.
+- only limited discussion of the other communication patterns (see remarks above).
+- using 16000 as the medium sized world means that normally scalability should
+  already be quite good, and show too little distinction with the 32000 based world.
+- the performance for the parallel code should also have been measured on 1 node
+  and 1 core, as this can point out possible performance issues
+- trends are mostly as expected, with larger problem size giving increasing efficiency,
+  still performance is less than normally expected.
+- it would have been better if the efficiency graphs would have been constructed
+  with separate lines, one each for particular number of nodes setting, as the
+  assignment mentioned.  Now multiple cases are bunched up together, and it 
+  takes an extra table to split  some case out again.
+- "Of particular interest is the observation that employing all 16 cores on
+   each node, especially with larger grid sizes, results in an impractically
+   large execution time. Intriguingly, in such instances, the parallel version’s
+   execution time surpasses that of the serial version, as detailed in the
+   accompanying table"
+  -> I would not be surprised that this is due to the wrong choice of have
+  all ranks allocated the full world, rather than just their small world chunks.
+  You are allocating more memory than the system has, and it starts swapping.
+- extension1n: latency hiding shows some performance advantage
+- extension2: graphs and analysis regarding evolving computation/communication ratios
+  and discussion
+
+===
+Grade maximum: program (3.0) + clean code (1.0) + report (4.0) + extension1 (1.0) + extension2 (1.0) = max 10
+Grade jch235: 2.3 (program) + 0.6 (clean code) + 3.0 (report) + 0.8 (extension1) + 0.8 (extension2) = 7.5
+=== 

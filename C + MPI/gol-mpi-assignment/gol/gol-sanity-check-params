@@ -1,0 +1,80 @@
+#!/bin/sh
+
+# This is a parameterized version of the gol-sanity-check script.
+# It could be used in a higher level test script as follows,
+# which in this case uses the same parameters as gol-sanity-check,
+# only it runs it for all the standard node (1, 2, 4, 8) and
+# core (1, 2, 4, 8, 16) combinations.
+#
+# -----
+# #!/bin/sh
+# for np in 1 2 4 8; do
+#     for cores in 1 2 4 8 16; do
+#         echo np $np cores
+#         ./bin/gol-sanity-check-params 2000 2000 15000 0 0 $np $cores gol-par 0
+#     done
+# done
+# -----
+#
+# The advantage is that you can more easily switch to other parameters
+# as it creates the sequential reference output file automatically if
+# is not yet available.
+
+if [ $# != 9 ]; then
+   echo Usage: $0 hsize vsize iter print sync nnodes ncores prog suffix >&2
+   exit 1
+fi
+
+# Symbolic parameter names
+hsize=$1
+vsize=$2
+iter=$3
+print=$4
+sync=$5
+nodes=$6
+cores=$7
+prog=$8
+suffix=$9
+
+SUFFIX="hsize$hsize-vsize$vsize-iter$iter-print$print-sync$sync"
+REF_DIR=./etc
+REF_OUTPUT_FILE="REF_OUTPUT-$SUFFIX"
+REF_TIMING_FILE="REF_TIMING-$SUFFIX"
+
+if [ ! -f $REF_DIR/$REF_OUTPUT_FILE ]; then
+    echo Reference output file $REF_DIR/$REF_OUTPUT_FILE does not exist >&2
+    echo prun -v -np 1 -1 ./gol/gol-seq $hsize $vsize $iter $print $sync
+         prun -v -np 1 -1 ./gol/gol-seq $hsize $vsize $iter $print $sync > $REF_DIR/$REF_OUTPUT_FILE 2>$REF_DIR/$REF_TIMING_FILE
+fi
+
+SUFFIX2="$SUFFIX-nodes$nodes-cores$cores-$prog-$suffix"
+OUTPUT_FILE="gol.test-$SUFFIX2.out"
+ERROR_FILE="gol.test-$SUFFIX2.err"
+DIFF_FILE="gol.test-$SUFFIX2.diff"
+
+echo "checking for correct output"
+
+echo prun -v -np $nodes -$cores -script $PRUN_ETC/prun-openmpi ./gol/$prog $hsize $vsize $iter $print $sync
+     prun -v -np $nodes -$cores -script $PRUN_ETC/prun-openmpi ./gol/$prog $hsize $vsize $iter $print $sync 2> $ERROR_FILE > $OUTPUT_FILE
+
+if grep "took" $ERROR_FILE > /dev/null ;
+then
+    true
+else
+    echo "*** The program did not print run time to stderr, please correct stderr printout:" >&2
+    cat $ERROR_FILE >&2
+    exit 1
+fi
+
+diff $REF_DIR/$REF_OUTPUT_FILE $OUTPUT_FILE > $DIFF_FILE
+
+if test -s $DIFF_FILE;
+then
+    echo "*** The program generated wrong output!" >&2
+    echo "Lines different:" >&2
+    # cat $DIFF_FILE
+    wc $DIFF_FILE >&2
+    exit 1
+else
+    echo "Output ok"
+fi

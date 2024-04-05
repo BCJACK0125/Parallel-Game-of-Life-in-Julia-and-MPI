@@ -1,0 +1,16 @@
+MPI assignment for the Parallel Programming Practical (PPP)
+
+Content:
+
+- gol		Contains a sequential version of the Game of Life algorithm.
+		Create a parallel version of the Game of Life algorithm there and name it gol-par.c
+		The Makefile already contains an entry to build this using "make gol-par".
+
+- docs		Place your report here.
+
+- bin		Contains gol-sanity-check, which makes a comparison with expected (sequential) output.
+		The default version of the script only checks a single instance; this can be extended.
+		Do not submit programs which do not pass the sanity checks successfully.
+
+- etc		Contains reference output files for the bin/gol-sanity-check script
+
